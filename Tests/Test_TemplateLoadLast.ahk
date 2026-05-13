@@ -14,6 +14,11 @@
 ; (que clarea extraTabsAfterSlot) pero NO re-aplicaba templateMode despues.
 ; Fix: extraido a `MainHud.ApplyLoadLastSnapshot` static (testeable).
 ;
+; FOCO: state-level (queue + extraTabsAfterSlot + preloadedSlots). NO se
+; invoca PasteBatch porque en CI headless el clipboard real puede bloquear
+; (ClipWait sin servicio de clipboard) — la cobertura de PasteBatch + Tabs
+; vive en Test_CaptureEngine.ahk (219 asserts), no aca.
+;
 ; - GRUPO A: invariantes de Arm + SetExtraTabsAfter (engine-level).
 ; - GRUPO B: regression guard - simula el patron BUGGY anterior; sigue
 ;            pasando porque el engine se comporta deterministicamente.
@@ -27,23 +32,6 @@
 ; Helpers
 ; --------------------------------------------------------------------
 
-; Cuenta {Tab} emitidos por PasteBatch (concatena todos los sendFn calls
-; y cuenta substrings).
-CountTabs(sendLog)
-{
-    total := ""
-    for s in sendLog
-        total .= s
-    n := 0
-    pos := 1
-    while (pos := InStr(total, "{Tab}", , pos))
-    {
-        n++
-        pos += 5  ; len "{Tab}"
-    }
-    return n
-}
-
 ; Simula el flujo ACTUAL de MainHud.LoadLastPaste (linea 886-917):
 ; Arm + restaurar queue + AutoAdvance. Sin re-aplicar templateMode.
 SimulateLoadLastBuggy(engine, savedQueue)
@@ -53,10 +41,6 @@ SimulateLoadLastBuggy(engine, savedQueue)
         engine.queue[A_Index] := savedQueue[A_Index]
     engine.AutoAdvance(0)
 }
-
-; (El flujo CORREGIDO ahora vive en MainHud.ApplyLoadLastSnapshot — los
-;  tests de GRUPO C invocan ese static method directamente para validar
-;  el production code path, no una simulacion.)
 
 ; Mock schema 3 slots simples (sin validators reales, sin prePasteSteps).
 mock := InvoiceSchema("mock", [
@@ -84,79 +68,64 @@ e.SetExtraTabsAfter(1, 1)
 e.Reset()
 AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 0, "T2: Reset clarea extras")
 
-; --- T3: PasteBatch sin extras emite N-1 Tabs (3 slots → 2 Tabs)
-e := CaptureEngine(mock)
-e.Arm()
-e.PushRaw("a")
-e.PushRaw("b")
-e.PushRaw("c")
-sendLog := []
-e.PasteBatch((s) => sendLog.Push(s), (*) => "")
-AssertEq(CountTabs(sendLog), 2, "T3: 3 slots sin extras = 2 Tabs (no Tab tras último)")
-
-; --- T4: PasteBatch con SetExtraTabsAfter(1, 1) emite 1 Tab adicional
+; --- T3: SetExtraTabsAfter(1, 1) deja el extra en estado correcto
 e := CaptureEngine(mock)
 e.Arm()
 e.SetExtraTabsAfter(1, 1)
-e.PushRaw("a")
-e.PushRaw("b")
-e.PushRaw("c")
-sendLog := []
-e.PasteBatch((s) => sendLog.Push(s), (*) => "")
-AssertEq(CountTabs(sendLog), 3, "T4: slot 1 extra=1 → 3 Tabs totales")
+AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 1, "T3: setea extra slot 1")
+AssertEq(e.extraTabsAfterSlot[1], 1, "T3: valor extra slot 1 = 1")
+
+; --- T4: SetExtraTabsAfter(1, 0) borra el extra
+e := CaptureEngine(mock)
+e.Arm()
+e.SetExtraTabsAfter(1, 1)
+e.SetExtraTabsAfter(1, 0)
+AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 0, "T4: SetExtraTabsAfter(1, 0) borra el extra")
 
 ; ====================================================================
-; GRUPO B: simulación del flujo ACTUAL de MainHud.LoadLastPaste (BUGGY)
+; GRUPO B: simulación del flujo BUGGY anterior de MainHud.LoadLastPaste
 ; ====================================================================
-; Estos tests reproducen exactamente lo que MainHud.LoadLastPaste hace hoy.
-; Demuestran que el engine queda en estado equivocado para templateMode=ON.
+; Reproduce exactamente lo que MainHud.LoadLastPaste hacia ANTES del fix.
+; Demuestra que el engine queda en estado equivocado para templateMode=ON.
 
-; --- T5: BUG — operador con templateMode=ON arma, scanea/pega, después
-;         clickea Load Last. extraTabsAfterSlot queda vacío.
+; --- T5: BUG histórico — templateMode=ON + LoadLast buggy pierde el flag.
 e := CaptureEngine(mock)
 e.Arm()
 e.SetExtraTabsAfter(1, 1)  ; templateMode=ON aplicado al armar (estado normal)
 ; ... operador trabaja, hace paste batch, dispara LoadLast ...
 SimulateLoadLastBuggy(e, ["lastA", "lastB", "lastC"])
-AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 0, "T5: BUG - LoadLast pierde el flag de template")
-sendLog := []
-e.PasteBatch((s) => sendLog.Push(s), (*) => "")
-AssertEq(CountTabs(sendLog), 2, "T5: BUG - PasteBatch emite 2 Tabs (faltó el extra del template)")
+AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 0, "T5: BUG histórico - LoadLast pierde el flag de template")
+AssertEq(e.queue[1], "lastA", "T5: queue se restaura igual")
+AssertEq(e.queue[2], "lastB", "T5: queue se restaura igual")
+AssertEq(e.queue[3], "lastC", "T5: queue se restaura igual")
 
-; --- T6: con templateMode=OFF, LoadLast queda accidentalmente correcto
+; --- T6: con templateMode=OFF, LoadLast buggy queda accidentalmente correcto
 ;         (extraTabsAfterSlot vacío coincide con OFF, pero por motivo equivocado).
 e := CaptureEngine(mock)
 e.Arm()
-; templateMode=OFF: no se hizo SetExtraTabsAfter, extra slot1 nunca se seteó
+; templateMode=OFF: no se llama SetExtraTabsAfter, extra slot1 nunca se seteó
 SimulateLoadLastBuggy(e, ["lastA", "lastB", "lastC"])
 AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 0, "T6: templateOFF + LoadLast - estado correcto por accidente")
-sendLog := []
-e.PasteBatch((s) => sendLog.Push(s), (*) => "")
-AssertEq(CountTabs(sendLog), 2, "T6: PasteBatch emite 2 Tabs (correcto para OFF)")
 
 ; ====================================================================
-; GRUPO C: validacion DIRECTA del production code (MainHud.ApplyLoadLastSnapshot)
+; GRUPO C: validación DIRECTA del production code (MainHud.ApplyLoadLastSnapshot)
 ; ====================================================================
-; Estos tests invocan el static method real que MainHud.LoadLastPaste usa
-; internamente. Si alguien rompe el fix (elimina SetExtraTabsAfter del
-; static), estos tests fallan inmediatamente.
+; Invocan el static method real que MainHud.LoadLastPaste usa internamente.
+; Si alguien rompe el fix (elimina SetExtraTabsAfter del static), estos
+; tests fallan inmediatamente.
 
-; --- T7: PRODUCTION - LoadLast con templateMode=ON emite extra Tab
+; --- T7: PRODUCTION - LoadLast con templateMode=ON re-aplica el extra Tab
 e := CaptureEngine(mock)
 MainHud.ApplyLoadLastSnapshot(e, ["lastA", "lastB", "lastC"], true)
-AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 1, "T7: production preserva extra slot 1")
+AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 1, "T7: production preserva extra slot 1 con templateMode=true")
 AssertEq(e.extraTabsAfterSlot[1], 1, "T7: production setea extra=1")
-sendLog := []
-e.PasteBatch((s) => sendLog.Push(s), (*) => "")
-AssertEq(CountTabs(sendLog), 3, "T7: production PasteBatch emite 3 Tabs (template OK)")
+AssertEq(e.queue[1], "lastA", "T7: queue se restaura desde snapshot")
+AssertEq(e.queue[3], "lastC", "T7: queue se restaura desde snapshot")
 
-; --- T8: PRODUCTION - LoadLast con templateMode=OFF no setea extras
+; --- T8: PRODUCTION - LoadLast con templateMode=OFF deja extras vacios
 e := CaptureEngine(mock)
 MainHud.ApplyLoadLastSnapshot(e, ["lastA", "lastB", "lastC"], false)
-AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 0, "T8: production con OFF no setea extra")
-sendLog := []
-e.PasteBatch((s) => sendLog.Push(s), (*) => "")
-AssertEq(CountTabs(sendLog), 2, "T8: production OFF - PasteBatch emite 2 Tabs")
+AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 0, "T8: production con templateMode=false no setea extra")
 
 ; --- T8b: PRODUCTION - slot vacio del INI deja queue vacio (post-Arm clean state)
 e := CaptureEngine(mock)
@@ -170,17 +139,14 @@ AssertEq(e.extraTabsAfterSlot[1], 1, "T8b: templateMode=ON re-aplicado correctam
 ; GRUPO D: workaround del operador y edge cases
 ; ====================================================================
 
-; --- T9: WORKAROUND actual del operador — toggle ON manual post-LoadLast
+; --- T9: WORKAROUND del operador — toggle ON manual post-LoadLast buggy
 ;         restaura el state vía OnTemplateToggle (engine.isCapturing=true).
 e := CaptureEngine(mock)
 SimulateLoadLastBuggy(e, ["lastA", "lastB", "lastC"])
-AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 0, "T9: post-LoadLast empty (bug confirmado)")
+AssertEq(e.extraTabsAfterSlot.Has(1) ? 1 : 0, 0, "T9: post-LoadLast buggy state empty (bug confirmado)")
 ; OnTemplateToggle ve isCapturing=true (LoadLast hizo Arm) y llama SetExtraTabsAfter.
 e.SetExtraTabsAfter(1, 1)
 AssertEq(e.extraTabsAfterSlot[1], 1, "T9: toggle manual recupera el extra")
-sendLog := []
-e.PasteBatch((s) => sendLog.Push(s), (*) => "")
-AssertEq(CountTabs(sendLog), 3, "T9: con workaround PasteBatch emite 3 Tabs")
 
 ; --- T10: toggles múltiples rápidos preservan estado final (no es bug aparte)
 e := CaptureEngine(mock)
