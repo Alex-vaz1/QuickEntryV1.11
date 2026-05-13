@@ -1,0 +1,25 @@
+# Backup snapshots locales (no se versionan; histórico se mantiene fuera del repo)
+_archive/*.zip
+_archive/*/
+
+# OS noise
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs locales del usuario (Logger.ahk escribe a APPDATA, pero por si acaso)
+*.log
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tests temporales
+QuickEntry_Test_*/
+
+# AHK binaries (si alguien copia el exe al repo por error)
+AutoHotkey*.exe
+AutoHotkey*.zip
