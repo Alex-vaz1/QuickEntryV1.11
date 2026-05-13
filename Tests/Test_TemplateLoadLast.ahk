@@ -1,8 +1,28 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Off
+; Redirige warnings (default = MsgBox modal que bloquea el proceso en headless) a stdout.
+; Sin esto, cualquier warning AHK al cargar MainHud cuelga el test 60s.
+#Warn All, StdOut
 
 #Include "..\Lib\MainHud.ahk"
 #Include "_AssertHelpers.ahk"
+
+; Stubs para los callbacks que MainHud.Build() referencia (DoArmOrSkip, DoSoltar,
+; DoReset, DoUndo, DoHeaderScan). En producción los define QuickEntry.ahk; el test
+; no carga ese entry point. Sin estos stubs, AHK trata los nombres como variables
+; locales no-inicializadas y dispara warnings (que con #Warn modal-MsgBox cuelgan
+; el proceso en headless). Nunca se invocan desde los tests — solo existen para
+; satisfacer la resolución de nombres al load-time de MainHud.
+DoArmOrSkip() {
+}
+DoHeaderScan(interactive := false) {
+}
+DoSoltar(interactive := false) {
+}
+DoReset() {
+}
+DoUndo() {
+}
 
 ; ====================================================================
 ; Test_TemplateLoadLast - Interacción templateMode + Load Last
