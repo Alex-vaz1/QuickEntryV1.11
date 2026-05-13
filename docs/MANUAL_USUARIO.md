@@ -160,3 +160,12 @@ Para la siguiente factura, simplemente volvé al paso 2 (`Ctrl+Shift+A`).
 - **Cambiar hotkeys:** [PERSONALIZACION_HOTKEYS.md](PERSONALIZACION_HOTKEYS.md)
 - **Cómo funciona por dentro / agregar features:** [GUIA_TECNICA.md](GUIA_TECNICA.md)
 - **Adaptar a otra empresa o formulario:** [AGREGAR_EMPRESA.md](AGREGAR_EMPRESA.md)
+
+## Reportar un bug
+
+Abrí un issue en https://github.com/Alex-vaz1/QuickEntryV1.11/issues con:
+- Pasos para reproducir.
+- Schema actual (`%APPDATA%\QuickEntry\config.ini`).
+- Adjuntar `%APPDATA%\QuickEntry\events.log` si existe.
+
+Para devs: ver [CONTRIBUTING.md](../CONTRIBUTING.md) para fixear y mandar PR.

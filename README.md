@@ -1,5 +1,7 @@
 # Asignet QuickEntry
 
+[![tests](https://github.com/Alex-vaz1/QuickEntryV1.11/actions/workflows/tests.yml/badge.svg?branch=develop)](https://github.com/Alex-vaz1/QuickEntryV1.11/actions/workflows/tests.yml)
+
 Herramienta de productividad para acelerar la carga de facturas en Asignet.
 
 ## Problema
@@ -93,3 +95,7 @@ Output esperado: 6 archivos PASS, 500+ asserts, exit 0.
 - **Validators puros + builders.** `ValidarSumaTol([5, 6])` retorna un closure (`.Bind()`) — no hace falta tocar el motor para sumar slots distintos.
 - **Errores con nombre del campo** El operador no piensa en "slot 7", piensa en "Past due".
 - **Tooltip de dos líneas con `▶ valor ◀`.** Línea 1 = qué viene; línea 2 = qué acabás de cargar (con marca visual fácil de revisar a ojo).
+
+## Contribuir
+
+Ver [CONTRIBUTING.md](CONTRIBUTING.md) para el flow de branches (`feature/* → develop → main`), Conventional Commits y cómo correr los tests localmente.

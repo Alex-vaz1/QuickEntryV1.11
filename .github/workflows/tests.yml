@@ -1,0 +1,61 @@
+name: tests
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+# Cancel viejos runs del mismo PR cuando se pushea un nuevo commit
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: AHK v2 tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install AutoHotkey v2 (pinned 2.0.18)
+        shell: pwsh
+        run: |
+          $version = "2.0.18"
+          $url = "https://www.autohotkey.com/download/2.0/AutoHotkey_${version}.zip"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP/ahk.zip" -UseBasicParsing
+          Expand-Archive -Path "$env:RUNNER_TEMP/ahk.zip" -DestinationPath "$env:RUNNER_TEMP/ahk" -Force
+          $ahk = "$env:RUNNER_TEMP/ahk/AutoHotkey64.exe"
+          if (-not (Test-Path $ahk)) {
+              Write-Host "AutoHotkey64.exe no encontrado. Contenido del zip:"
+              Get-ChildItem "$env:RUNNER_TEMP/ahk" -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
+              throw "AHK install fallido"
+          }
+          "AHK_V2=$ahk" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $ahk /Version
+
+      - name: Verify runner.ps1 picks up AHK_V2
+        shell: pwsh
+        run: |
+          Write-Host "AHK_V2 = $env:AHK_V2"
+          if (-not (Test-Path $env:AHK_V2)) { throw "AHK_V2 no apunta a archivo existente" }
+
+      - name: Run test suite
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File Tests/runner.ps1
+
+      - name: Upload test outputs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-outputs
+          path: |
+            ${{ runner.temp }}/Test_*.out
+            ${{ runner.temp }}/Test_*.err
+          if-no-files-found: ignore
+          retention-days: 7

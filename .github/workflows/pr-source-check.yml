@@ -1,0 +1,22 @@
+name: pr-source-check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-source-branch:
+    name: PR to main from develop only
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Source branch must be develop or hotfix/*
+        run: |
+          src="${{ github.head_ref }}"
+          echo "Source branch: $src"
+          if [ "$src" = "develop" ] || [[ "$src" == hotfix/* ]]; then
+            echo "OK: PR source '$src' allowed for main"
+            exit 0
+          fi
+          echo "::error::PRs to main solo permitidas desde 'develop' o 'hotfix/*'. Source fue '$src'."
+          exit 1

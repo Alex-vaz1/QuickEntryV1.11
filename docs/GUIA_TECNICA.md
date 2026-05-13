@@ -203,6 +203,14 @@ Salida esperada: `ALL TESTS PASSED`, **756 asserts**, exit 0. El runner detecta 
 
 El path de AutoHotkey64 se resuelve automáticamente con discovery portable: `$env:AHK_V2` → `$env:LOCALAPPDATA\Programs\AutoHotkey\v2\AutoHotkey64.exe` → `C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe`. Si AHK v2 no está instalado en una ubicación estándar, definir `$env:AHK_V2` apuntando al ejecutable.
 
+### Integración continua
+
+Cada push a `develop`/`main` y cada PR contra esas branches dispara automáticamente el workflow [`tests.yml`](../.github/workflows/tests.yml) en GitHub Actions. El runner es Windows con AutoHotkey 2.0.18 pinned. PRs no se pueden mergear sin `tests` green ni sin 1 review aprobada.
+
+PRs a `main` adicionalmente disparan [`pr-source-check.yml`](../.github/workflows/pr-source-check.yml) que rechaza PRs cuya source branch no sea `develop` o `hotfix/*`.
+
+Ver [CONTRIBUTING.md](../CONTRIBUTING.md) para el flow completo.
+
 ---
 
 ## Decisiones de diseño clave
