@@ -85,8 +85,21 @@ foreach ($t in $tests) {
             "FAIL ($failures asserts)"
         }
         Write-Host ("FAIL  {0,-32} {1}" -f $t.Name, $reason) -ForegroundColor Red
+        # En TIMEOUT o CRASH, volcar TODO el stdout para debug (ver hasta donde llego el test).
+        # En FAIL normal, solo las lineas FAIL son relevantes.
         if (Test-Path $out) {
-            (Get-Content $out -Raw) -split "`n" | Where-Object { $_ -match "^FAIL" } | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+            $outContent = Get-Content $out -Raw
+            if ($timedOut -or ($crashed -and -not $hasSummary)) {
+                Write-Host "      --- stdout completo (test colgado/crash, ultimas lineas indican donde): ---" -ForegroundColor Yellow
+                if ($outContent) {
+                    $outContent -split "`n" | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+                } else {
+                    Write-Host "      (stdout vacio - test colgado antes del primer FileAppend)" -ForegroundColor DarkGray
+                }
+                Write-Host "      --- fin stdout ---" -ForegroundColor Yellow
+            } else {
+                $outContent -split "`n" | Where-Object { $_ -match "^FAIL" } | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+            }
         }
         if (Test-Path $err) {
             $errContent = Get-Content $err -Raw
