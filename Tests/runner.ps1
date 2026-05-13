@@ -21,8 +21,35 @@ foreach ($t in $tests) {
     $err = Join-Path $env:TEMP "$($t.BaseName).err"
     if (Test-Path $out) { Remove-Item $out -Force }
     if (Test-Path $err) { Remove-Item $err -Force }
-    $p = Start-Process -FilePath $ahk -ArgumentList @('/ErrorStdOut=utf-8', $t.FullName) `
-         -RedirectStandardOutput $out -RedirectStandardError $err -Wait -NoNewWindow -PassThru
+    Write-Host -NoNewline ("RUN   {0,-32} " -f $t.Name)
+    # Usamos [Diagnostics.Process] directo (no Start-Process) para tener ExitCode
+    # confiable tras WaitForExit con timeout. PS 5.1 Start-Process + NoNewWindow + PassThru
+    # no rastrea ExitCode despues de un timeout.
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $ahk
+    $psi.Arguments = "/ErrorStdOut=utf-8 `"$($t.FullName)`""
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    # Lectura async de stdout/stderr para evitar deadlock por buffer lleno.
+    $stdoutTask = $p.StandardOutput.ReadToEndAsync()
+    $stderrTask = $p.StandardError.ReadToEndAsync()
+    # Per-test timeout: 60s. Tests reales corren en <1s; este timeout solo dispara en CI
+    # cuando algun test queda colgado en headless (esperando clipboard/key/GUI).
+    $timedOut = -not $p.WaitForExit(60000)
+    if ($timedOut) {
+        try { $p.Kill() } catch {}
+        Start-Sleep -Milliseconds 200  # dar tiempo a que los streams flushen tras Kill
+        Write-Host "TIMEOUT" -ForegroundColor Yellow
+    } else {
+        Write-Host ("done (exit={0})" -f $p.ExitCode)
+    }
+    # Persistir stdout/stderr a archivo (el codigo abajo los lee asi).
+    Set-Content -Path $out -Value $stdoutTask.Result -NoNewline -Encoding UTF8
+    Set-Content -Path $err -Value $stderrTask.Result -NoNewline -Encoding UTF8
+    $exitCode = if ($timedOut) { -1 } else { $p.ExitCode }
 
     $tail = ""
     $asserts = 0
@@ -44,13 +71,19 @@ foreach ($t in $tests) {
         }
     }
 
-    $crashed = (-not $hasSummary) -or ($p.ExitCode -ne 0)
+    $crashed = (-not $hasSummary) -or ($exitCode -ne 0) -or $timedOut
     $assertsFailed = ($failures -gt 0)
 
     if (-not $crashed -and -not $assertsFailed) {
         Write-Host ("PASS  {0,-32} {1}" -f $t.Name, $tail) -ForegroundColor Green
     } else {
-        $reason = if ($crashed) { "CRASH (exit=$($p.ExitCode), no summary)" } else { "FAIL ($failures asserts)" }
+        $reason = if ($timedOut) {
+            "TIMEOUT (60s, killed) - test colgado en headless"
+        } elseif ($crashed) {
+            "CRASH (exit=$exitCode, no summary)"
+        } else {
+            "FAIL ($failures asserts)"
+        }
         Write-Host ("FAIL  {0,-32} {1}" -f $t.Name, $reason) -ForegroundColor Red
         if (Test-Path $out) {
             (Get-Content $out -Raw) -split "`n" | Where-Object { $_ -match "^FAIL" } | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
